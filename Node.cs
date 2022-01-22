@@ -2,7 +2,7 @@ using System.Collections;
 using System.Collections.Generic;
 using UnityEngine;
 
-public class Node
+public class Node : IHeapItem<Node>
 {
     // node能走吗？会根据是否与障碍物重合判断
     public bool walkable;
@@ -17,6 +17,8 @@ public class Node
     public int hCost;
     // 父节点 也就是路径中该节点的上一个节点
     public Node parent;
+    // IHeapItem接口实现
+    int heapIndex;
 
     // 构造函数
     public Node(bool _walkable, Vector3 _worldPos, int _gridX, int _gridY)
@@ -31,5 +33,22 @@ public class Node
     public int fCost
     {
         get { return gCost + hCost; }
+    }
+
+    public int HeapIndex
+    {
+        get { return heapIndex; }
+        set { heapIndex = value; }
+    }
+
+    // HeapItem CompareTo实现
+    public int CompareTo(Node nodeToCompare)
+    {
+        int compare = fCost.CompareTo(nodeToCompare.fCost);
+        if (compare == 0) // fCost相等 则比较hCost
+        {
+            compare = hCost.CompareTo(nodeToCompare.hCost);
+        }
+        return -compare; //fCost/hCost更小的优先级更大
     }
 }
