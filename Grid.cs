@@ -63,20 +63,19 @@ public class Grid : MonoBehaviour
     {
         List<Node> neighbours = new List<Node>();
 
-        for (int x = -1; x <= -1; x++)
+        for (int x = -1; x <= 1; x++)
         {
-            for (int y = 0; y <= 1; y++)
+            for (int y = -1; y <= 1; y++)
             {
                 if (x == 0 && y == 0)
-                {
-                    // 这就是节点自己
-                    continue;
+                {                  
+                    continue;// 这就是节点自己
                 }
 
                 int checkX = node.gridX + x;
                 int checkY = node.gridY + y;
 
-                // 考虑Node位于Grid边界的情况
+                // 结果不能超出Grid的范围
                 if(checkX >= 0 && checkY < gridSizeY && checkX < gridSizeX && checkY >= 0)
                 {
                     neighbours.Add(grid[checkX, checkY]);
