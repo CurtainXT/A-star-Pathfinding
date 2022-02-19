@@ -30,9 +30,9 @@ public class Grid : MonoBehaviour
     // 路径
     public List<Node> path;
     // Editor只绘制路径Gizmos
-    public bool onlyDisplayPathGizmos;
+    public bool displayGridGizmos;
 
-    private void Start()
+    private void Awake()
     {
         // 根据grid的尺寸和node的尺寸计算node的数量并填入二维数组
         nodeDiameter = nodeRadius * 2;
@@ -103,7 +103,7 @@ public class Grid : MonoBehaviour
         percentX = Mathf.Clamp01(percentX);
         percentY = Mathf.Clamp01(percentY);
 
-        int x = Mathf.RoundToInt((gridSizeX - 1) * percentX); //减一是因为gridSize是1开始，我们需要index
+        int x = Mathf.RoundToInt((gridSizeX - 1) * percentX); //减一是因为gridSize是1开始的
         int y = Mathf.RoundToInt((gridSizeY - 1) * percentY);
         return grid[x, y];
     }
@@ -113,36 +113,12 @@ public class Grid : MonoBehaviour
     {
         Gizmos.DrawWireCube(transform.position, new Vector3(gridWorldSize.x, 1, gridWorldSize.y));
 
-        if(onlyDisplayPathGizmos)
+        if (grid != null && displayGridGizmos)
         {
-            if(path != null)
-            {                
-                foreach (var node in path)
-                {
-                    Gizmos.color = Color.green;
-                    Gizmos.DrawCube(node.worldPosition, Vector3.one * (nodeDiameter - 0.1f));
-                }
-            }
-        }
-        else
-        {
-            if (grid != null)
+            foreach (Node node in grid)
             {
-                Node playerNode = GetNodeFromWorldPoint(player.position);
-                foreach (Node node in grid)
-                {
-                    Gizmos.color = node.walkable ? Color.white : Color.red;
-                    if (playerNode == node)
-                    {
-                        Gizmos.color = Color.cyan;
-                    }
-                    if (path != null)
-                    {
-                        if (path.Contains(node))
-                            Gizmos.color = Color.green;
-                    }
-                    Gizmos.DrawCube(node.worldPosition, Vector3.one * (nodeDiameter - 0.1f));
-                }
+                Gizmos.color = node.walkable ? Color.white : Color.red;
+                Gizmos.DrawCube(node.worldPosition, Vector3.one * (nodeDiameter - 0.1f));
             }
         }
     }
