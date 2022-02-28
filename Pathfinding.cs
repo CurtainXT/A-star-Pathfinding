@@ -1,137 +1,253 @@
-using System;
 using System.Collections;
 using System.Collections.Generic;
+using System;
 using UnityEngine;
+#if UNITY_EDITOR
+using UnityEditor;
+using UnityEditorInternal;
+#endif
+using PolyPerfect.City;
 
-public class Pathfinding : MonoBehaviour
+namespace ATMC
 {
-    PathRequestManager requestManager;
-    public Grid grid;
-
-    private void Awake()
+    public class Pathfinding : MonoBehaviour
     {
-        requestManager = GetComponent<PathRequestManager>();
-        grid = this.GetComponent<Grid>();
-    }
+        private BinaryHeap Open = new BinaryHeap(2048);
+        private Dictionary<Guid, int> OpenIDs = new Dictionary<Guid, int>();
+        private Dictionary<Guid, PathNode> Closed = new Dictionary<Guid, PathNode>();
+        [HideInInspector]
+        public List<Path> PathList = new List<Path>();
+        [HideInInspector]
+        public List<Path> wholePath;
 
-    public void StartFindPath(Vector3 pathStart, Vector3 targetPos)
-    {
-        StartCoroutine(FindPath(pathStart, targetPos));
-    }
+        private Vector3 startPoint;
+        private Vector3 endPoint;
 
-    IEnumerator FindPath(Vector3 startPos, Vector3 targetPos)
-    {
-        // 接收寻路的
-        Vector3[] waypoints = new Vector3[0];
-        // 寻路是否成功
-        bool pathSuccess = false;
+        private Tile endTile;
+        private Tile startTile;
+        private Guid endId;
 
-        // 获取起点终点
-        Node startNode = grid.GetNodeFromWorldPoint(startPos);
-        Node targetNode = grid.GetNodeFromWorldPoint(targetPos);
-        
-        // 起点和目标点都能走时我们才进行计算
-        if(startNode.walkable && targetNode.walkable)
+        private PathRequestManager requestManager;
+
+        private void Awake()
         {
-            // Open列表 存放所有预选的节点
-            Heap<Node> openSet = new Heap<Node>(grid.MaxSize);
-            HashSet<Node> closeSet = new HashSet<Node>();
-            openSet.Add(startNode);
+            requestManager = GetComponent<PathRequestManager>();
+        }
 
-            while (openSet.Count > 0)
+        public void StartFindPath(Vector3 pathStart, Vector3 targetPos)
+        {
+            StartCoroutine(FindPath(pathStart, targetPos));
+        }
+
+        IEnumerator FindPath(Vector3 start, Vector3 end)
+        {
+            Open.Clear();
+            PathList = new List<Path>();
+            Closed.Clear();
+            OpenIDs.Clear();
+
+            startPoint = start;
+            endPoint = end;
+
+            startTile = FindClosestTile(startPoint);
+            endTile = FindClosestTile(endPoint);
+            List<Path> startPaths;
+            startPaths = startTile.paths;
+            foreach (Path path in startPaths)
             {
-                Node currentNode = openSet.RemoveFirst();
-                closeSet.Add(currentNode);
+                float h = CalculateHeuristic(path.pathPositions[path.pathPositions.Count - 1].position);
+                float g = Vector3.Distance(startPoint, path.pathPositions[0].position) + Vector3.Distance(transform.position, path.pathPositions[path.pathPositions.Count - 1].position);
+                PathNode node = new PathNode() { path = path, lastNode = null, currentScore = g, score = h + g };
+                Open.Insert(node);
+                OpenIDs.Add(node.path.Id, 0);
+            }
+            //int i = 0;
+            bool pathSuccess = false;
+            while (Open.Count > 0)
+            {
 
-                // 碰到终点了
-                if (currentNode == targetNode)
+                PathNode node = GetBestNode();
+                //Debug.Log(i++ + " " + (node.score) + " "+ node.path.transform.parent.parent.name);
+                if (node.path.TileId == endTile.Id)
                 {
+                    Closed.Add(node.path.Id, node);
+                    endId = node.path.Id;
                     pathSuccess = true;
                     break;
                 }
-
-                // 查看每个相邻节点
-                foreach (Node neighbourNode in grid.GetNeighbours(currentNode))
+                foreach (Path item in node.path.nextPaths)
                 {
-                    // 如果相邻节点unwalkable或者已经在closeSet里面了 啥也不干
-                    if (!neighbourNode.walkable || closeSet.Contains(neighbourNode))
+                    if (item != null)
                     {
-                        continue;
-                    }
-                    // 计算从当前节点来看的neighbourNode的gCost
-                    int newMovementCostToNeighbour = currentNode.gCost + GetDistance(currentNode, neighbourNode);
-                    // 如果新的gCost更小 或者这是第一次考虑此neighbourNode
-                    if (newMovementCostToNeighbour < neighbourNode.gCost || !openSet.Contains(neighbourNode))
-                    {
-                        // 更新此neighbourNode的Cost
-                        neighbourNode.gCost = newMovementCostToNeighbour;
-                        neighbourNode.hCost = GetDistance(neighbourNode, targetNode);
-                        neighbourNode.parent = currentNode;
-
-                        if (!openSet.Contains(neighbourNode))
+                        if (!Closed.ContainsKey(item.Id) && !OpenIDs.ContainsKey(item.Id))
                         {
-                            openSet.Add(neighbourNode);
+                            Vector3 distance = item.pathPositions[0].position - item.pathPositions[item.pathPositions.Count - 1].position;
+                            float currentScore = node.currentScore + Math.Abs(distance.x) + Math.Abs(distance.y) + Math.Abs(distance.z) - ((item.speed / 10) * item.transform.lossyScale.x);
+
+                            Open.Insert(new PathNode() { path = item, lastNode = node, currentScore = currentScore, score = CalculateHeuristic(item.pathPositions[item.pathPositions.Count - 1].position) + currentScore });
+                            OpenIDs.Add(item.Id, 0);
                         }
                     }
                 }
+                Closed.Add(node.path.Id, node);
+
             }
+
+            Closed[endId].path = FindClosestPath(endPoint, Closed[endId].lastNode.path.nextPaths);
+            GetPathList(Closed[endId]);
+            PathList.Reverse();
+            //PathList[0] = FindClosestPath(startPoint, startPaths);
+            requestManager.FinishedProcessingPath(PathList, pathSuccess);
+
+            yield return null;
+
         }
-       
-        yield return null;
-        if(pathSuccess)
+
+
+        private PathNode GetBestNode()
         {
-            // 回溯节点以获取路径
-            waypoints = RetracePath(startNode, targetNode);
+
+            PathNode pathNode = Open.PopTop();
+            OpenIDs.Remove(pathNode.path.Id);
+            return pathNode;
         }
-        requestManager.FinishedProcessingPath(waypoints, pathSuccess);
-    }
 
-    Vector3[] RetracePath(Node startNode, Node endNode)
-    {
-        List<Node> path = new List<Node>();
-        Node currentNode = endNode;
-
-        while(currentNode != startNode)
+        private float CalculateHeuristic(Vector3 currentTile)
         {
-            path.Add(currentNode);
-            currentNode = currentNode.parent;
+            Vector3 distance = endPoint - currentTile;
+            return Math.Abs(distance.x) + Math.Abs(distance.y) + Math.Abs(distance.z);
         }
-        Vector3[] waypoints = SimplifyPath(path);
-        Array.Reverse(waypoints);
-        return waypoints;
-    }
-
-    Vector3[] SimplifyPath(List<Node> path)
-    {
-        List<Vector3> waypoints = new List<Vector3>();
-        Vector2 directionOld = Vector2.zero;
-
-        for (int i = 1; i < path.Count; i++)
+        private void GetPathList(PathNode thisNode)
         {
-            // 如果一系列路径节点在一个方向上，则取最终的那个节点
-            Vector2 directionNew = new Vector2(path[i - 1].gridX - path[i].gridX, path[i - 1].gridY - path[i].gridY);
-            if (directionNew != directionOld)
+            if (thisNode != null)
             {
-                waypoints.Add(path[i-1].worldPosition);
+                PathList.Add(thisNode.path);
+                GetPathList(thisNode.lastNode);
             }
-            directionOld = directionNew;
         }
 
-        return waypoints.ToArray();
+        private Tile FindClosestTile(Vector3 point)
+        {
+            Tile closestTile = null;
+            Collider[] coliders = Physics.OverlapBox(point, new Vector3(Mathf.Abs(2 * transform.lossyScale.x), Mathf.Abs(2 * transform.lossyScale.y), Mathf.Abs(2 * transform.lossyScale.z)));
+            foreach (Collider collider in coliders)
+            {
+                closestTile = collider.GetComponent<Tile>();
+                if (closestTile != null)
+                {
+                    return closestTile;
+                }
+            }
+            float minDistance = Mathf.Infinity;
+
+            foreach (Tile tile in Tile.tiles)
+            {
+                float distance = Vector3.Distance(tile.transform.position, point);
+                if (distance < minDistance)
+                {
+                    minDistance = distance;
+                    closestTile = tile;
+                }
+            }
+
+            return closestTile;
+        }
+        private Path FindClosestPath(Vector3 point, List<Path> paths)
+        {
+            Path closestPath = null;
+            float minDistance = Mathf.Infinity;
+            foreach (Path path in paths)
+            {
+                for (int i = 0; i < path.pathPositions.Count; i++)
+                {
+                    float distance = Vector3.Distance(path.pathPositions[i].position, point);
+                    if (distance < minDistance)
+                    {
+                        minDistance = distance;
+                        closestPath = path;
+                    }
+                }
+            }
+            return closestPath;
+        }
     }
 
-    int GetDistance(Node nodeA, Node nodeB)
+
+    #region Editor
+#if UNITY_EDITOR
+    [CustomEditor(typeof(Pathfinding)), CanEditMultipleObjects]
+    public class CustomPathEditor : Editor
     {
-        int dstX = Mathf.Abs(nodeA.gridX - nodeB.gridX);
-        int dstY = Mathf.Abs(nodeA.gridY - nodeB.gridY);
-
-        if(dstX > dstY)
+        Pathfinding navPath;
+        private void OnEnable()
         {
-            return 14 * dstY + 10 * (dstX - dstY);
+            navPath = target as Pathfinding;
         }
-        else
+        void OnSceneGUI()
         {
-            return 14 * dstX + 10 * (dstY - dstX);
+            if (navPath.wholePath.Count == 0)
+            {
+                if (navPath.PathList.Count != 0)
+                {
+                    for (int i = 0; i < navPath.PathList.Count; i++)
+                    {
+                        if (navPath.PathList[i] != null)
+                        {
+                            if (i < navPath.PathList.Count - 1)
+                            {
+                                for (int j = 1; j < navPath.PathList[i].pathPositions.Count; j++)
+                                {
+                                    Handles.color = Color.white;
+                                    Handles.DrawLine(navPath.PathList[i].pathPositions[j - 1].position, navPath.PathList[i].pathPositions[j].position);
+                                    Handles.color = Color.blue;
+                                    Handles.ArrowHandleCap(0, navPath.PathList[i].pathPositions[j - 1].position, Quaternion.LookRotation(navPath.PathList[i].pathPositions[j].position - navPath.PathList[i].pathPositions[j - 1].position), 3f, EventType.Repaint);
+                                    if (i == 0)
+                                        Handles.color = Color.blue;
+                                    else if (i == navPath.PathList.Count - 1)
+                                        Handles.color = Color.red;
+                                    else
+                                        Handles.color = Color.white;
+                                    Handles.SphereHandleCap(0, navPath.PathList[i].pathPositions[j].position, Quaternion.LookRotation(navPath.PathList[i].pathPositions[j].position), 0.2f, EventType.Repaint);
+                                }
+
+                            }
+                        }
+
+                    }
+                }
+            }
+            else
+            {
+                for (int i = 0; i < navPath.wholePath.Count; i++)
+                {
+                    if (navPath.wholePath[i] != null)
+                    {
+                        if (i < navPath.wholePath.Count - 1)
+                        {
+                            for (int j = 1; j < navPath.wholePath[i].pathPositions.Count; j++)
+                            {
+                                Handles.color = Color.white;
+                                Handles.DrawLine(navPath.wholePath[i].pathPositions[j - 1].position, navPath.wholePath[i].pathPositions[j].position);
+                                Handles.color = Color.blue;
+                                Handles.ArrowHandleCap(0, navPath.wholePath[i].pathPositions[j - 1].position, Quaternion.LookRotation(navPath.wholePath[i].pathPositions[j].position - navPath.wholePath[i].pathPositions[j - 1].position), 3f, EventType.Repaint);
+                                if (i == 0)
+                                    Handles.color = Color.blue;
+                                else if (i == navPath.wholePath.Count - 1)
+                                    Handles.color = Color.red;
+                                else
+                                    Handles.color = Color.white;
+                                Handles.SphereHandleCap(0, navPath.wholePath[i].pathPositions[j].position, Quaternion.LookRotation(navPath.wholePath[i].pathPositions[j].position), 0.2f, EventType.Repaint);
+                            }
+
+                        }
+                    }
+
+                }
+            }
+
         }
     }
+#endif
+    #endregion
+
 }
