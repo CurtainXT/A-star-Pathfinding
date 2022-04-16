@@ -11,6 +11,8 @@ public class Node : IHeapItem<Node>
     // 在Grid二维坐标中的位置
     public int gridX;
     public int gridY;
+    // 节点移动权重
+    public int movementPenalty;
     // 节点到起点的距离
     public int gCost;
     // 节点到终点的距离
@@ -21,12 +23,13 @@ public class Node : IHeapItem<Node>
     int heapIndex;
 
     // 构造函数
-    public Node(bool _walkable, Vector3 _worldPos, int _gridX, int _gridY)
+    public Node(bool _walkable, Vector3 _worldPos, int _gridX, int _gridY, int _penalty)
     {
         walkable = _walkable;
         worldPosition = _worldPos;
         gridX = _gridX;
         gridY = _gridY;
+        movementPenalty = _penalty;
     }
 
     // fCost为gCost + hCost 所以写个属性就行

@@ -59,7 +59,7 @@ public class Pathfinding : MonoBehaviour
                         continue;
                     }
                     // 计算从当前节点来看的neighbourNode的gCost
-                    int newMovementCostToNeighbour = currentNode.gCost + GetDistance(currentNode, neighbourNode);
+                    int newMovementCostToNeighbour = currentNode.gCost + GetDistance(currentNode, neighbourNode) + neighbourNode.movementPenalty;
                     // 如果新的gCost更小 或者这是第一次考虑此neighbourNode
                     if (newMovementCostToNeighbour < neighbourNode.gCost || !openSet.Contains(neighbourNode))
                     {
@@ -71,6 +71,10 @@ public class Pathfinding : MonoBehaviour
                         if (!openSet.Contains(neighbourNode))
                         {
                             openSet.Add(neighbourNode);
+                        }
+                        else
+                        {
+                            openSet.UpdateItem(neighbourNode);
                         }
                     }
                 }
